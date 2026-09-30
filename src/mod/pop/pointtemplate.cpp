@@ -210,7 +210,8 @@ std::shared_ptr<PointTemplateInstance> PointTemplate::SpawnTemplate(CBaseEntity 
 	for (auto it = this->entities.begin(); it != this->entities.end(); ++it)
 	{
 		auto &keys = *it;
-		CBaseEntity *entity = CreateEntityByName(keys.find("classname")->second.c_str());
+		auto entity_classname = keys.find("classname")->second;
+		CBaseEntity *entity = CreateEntityByName(entity_classname.c_str());
 		if (entity != nullptr)
 		{
 			templ_inst->entities.push_back(entity);
@@ -294,8 +295,19 @@ std::shared_ptr<PointTemplateInstance> PointTemplate::SpawnTemplate(CBaseEntity 
 				SolidType_t solid = SOLID_BBOX;
 
 				auto solid_key = keys.find("solid");
+
 				if (solid_key != keys.end())
 					solid = static_cast<SolidType_t>(std::stoi(solid_key->second));
+				
+				// HACK: prior to 08-30-2026, SpawnTemplate always set SOLID_BBOX and ignored the "solid" keyvalue.
+				// adding kv support broke previously misconfigured brush PTs with "solid" "0".
+				// auto-fix these and throw a warning.
+				if (solid == SOLID_NONE)
+				{
+					auto entity_name = itname != keys.end() ? itname->second : entity_classname;
+					Warning("SpawnTemplate: Non-solid brush entity (%s)! Probably incorrect 'solid' keyvalue. Setting to SOLID_BBOX\n", entity_name.c_str());
+					solid = SOLID_BBOX;
+				}
 
 				brush_entity_bounding_box.push_back({entity, mins, maxs, solid});
 			}
