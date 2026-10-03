@@ -134,8 +134,14 @@ class ExtensionConfig(object):
       with open(os.path.join(builder.sourcePath, 'sdk2013.json'), 'rt') as fp:
         sdk = json.load(fp)
         builder.AddConfigureFile(os.path.join(builder.sourcePath, 'sdk2013.json'))
+        # Reuse the TF2 tree (and its auto-built tier1/mathlib)
+        tf2 = SdkHelpers.sdks['tf2']
+        sdk['path'] = tf2['path']
+        if 'tier1' in tf2:
+          sdk['tier1'] = tf2['tier1']
+        if 'mathlib' in tf2:
+          sdk['mathlib'] = tf2['mathlib']
         SdkHelpers.sdks['sdk2013'] = sdk
-        SdkHelpers.sdks['sdk2013']['path'] = SdkHelpers.sdks['tf2']['path']
 
     self.sdks = SdkHelpers.sdks
     self.sdk_manifests = SdkHelpers.sdk_manifests
@@ -622,11 +628,28 @@ builder.autoversionx64 = builder.AddCommand(
   argv    = [ 'g++', os.path.join(builder.currentSourcePath,"src/version.cpp"), '-c', '-m64', '-fPIC', '-include', os.path.join(builder.currentSourcePath,"src/version.h"), '-o', 'versionx64.o'],
 )
 
+def ShareSdkDetection(dst, src, sdk_names = None):
+  # Newer hl2sdk-manifests builds tier1/mathlib during detectSDKs() and registers
+  # shared symlink outputs.
+  dst.sm_root = src.sm_root
+  dst.mms_root = src.mms_root
+  dst.sdk_manifests = src.sdk_manifests
+  dst.sdk_targets = src.sdk_targets
+  if sdk_names is None:
+    dst.sdks = src.sdks
+  else:
+    dst.sdks = { name: src.sdks[name] for name in sdk_names if name in src.sdks }
+
 if builder.options.build_all:
   old_sdk_option = builder.options.sdks
+
+  # Detect the full SDK set once, then reuse it for every package variant.
+  SharedSDKs = ExtensionConfig()
+  builder.options.sdks = old_sdk_option
+  SharedSDKs.detectSDKs()
+
   Extension = ExtensionConfig()
-  builder.options.sdks = "tf2"
-  Extension.detectSDKs()
+  ShareSdkDetection(Extension, SharedSDKs, ['tf2'])
   Extension.configure()
 
   builder.targets = builder.CloneableList(Extension.all_targets)
@@ -635,8 +658,7 @@ if builder.options.build_all:
 
   builder.options.exclude_mods_mvm = True
   ExtensionNoMvM = ExtensionConfig()
-  builder.options.sdks = "tf2"
-  ExtensionNoMvM.detectSDKs()
+  ShareSdkDetection(ExtensionNoMvM, SharedSDKs, ['tf2'])
   ExtensionNoMvM.configure()
 
   builder.targets = builder.CloneableList(ExtensionNoMvM.all_targets)
@@ -645,10 +667,10 @@ if builder.options.build_all:
 
   builder.options.exclude_mods_mvm = False
   builder.options.optimize_mods_only = True
-  
+
   builder.options.sdks = old_sdk_option
   ExtensionOptimizeOnly = ExtensionConfig()
-  ExtensionOptimizeOnly.detectSDKs()
+  ShareSdkDetection(ExtensionOptimizeOnly, SharedSDKs)
   ExtensionOptimizeOnly.configure()
 
   builder.targets = builder.CloneableList(ExtensionOptimizeOnly.all_targets)
